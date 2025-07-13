@@ -8,13 +8,13 @@ fn main() -> Result<()> {
     let cli = ParkhayCli::parse();
 
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 400.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([800.0, 600.0]),
         ..Default::default()
     };
     eframe::run_native(
         "parkhay",
         native_options,
-        Box::new(|cc| Ok(Box::new(parkhay::ParkhayApp::new(cc, cli.path)))),
+        Box::new(|cc| Ok(Box::new(parkhay::ParkhayApp::new(cc, cli.path)?))),
     )
     .map_err(|e| anyhow!("Error launching Parkhay: {e}"))
 }
