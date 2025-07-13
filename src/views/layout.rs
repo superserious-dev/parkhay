@@ -1,8 +1,11 @@
 use egui::{CentralPanel, Frame, Label, RichText, Ui, Widget, epaint::MarginF32};
+use footer_renderer::FooterRenderer;
 
 use super::View;
 use crate::ParkhayFile;
 
+mod components;
+mod footer_renderer;
 pub struct LayoutView {
     parkhay_file: ParkhayFile,
 }
@@ -58,7 +61,10 @@ impl View for LayoutView {
                             );
                         });
 
-                    // TODO add file content
+                    // TODO add Data
+
+                    // Footer
+                    FooterRenderer::render(ui, &self.parkhay_file.footer);
 
                     Frame::default()
                         .fill(ui.style().visuals.widgets.inactive.bg_fill)
