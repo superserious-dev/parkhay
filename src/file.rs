@@ -224,14 +224,6 @@ pub struct ParkhayFooter {
     pub row_groups: Vec<parquet::format::RowGroup>,
 }
 
-impl ParkhayFooter {
-    pub fn schema_message_string(&self) -> String {
-        let mut out = vec![];
-        parquet::schema::printer::print_schema(&mut out, &self.schema_root);
-        String::from_utf8_lossy(&out).to_string()
-    }
-}
-
 impl TryFrom<parquet::format::FileMetaData> for ParkhayFooter {
     type Error = Error;
     fn try_from(file_metadata: parquet::format::FileMetaData) -> Result<Self> {

@@ -1,11 +1,13 @@
 use egui::{Color32, Frame, Grid, Label, Margin, RichText, ScrollArea, Ui, Widget};
 use row_groups_renderer::RowGroupsRenderer;
+use schema_renderer::SchemaRenderer;
 
 use crate::file::ParkhayFooter;
 
 use super::components::{CollapsibleSection, CollapsibleSectionIcon, LabeledValue};
 
 mod row_groups_renderer;
+mod schema_renderer;
 mod ui_helpers;
 
 const CORNER_RADIUS: f32 = 2.5;
@@ -37,6 +39,10 @@ impl FooterRenderer {
                     "Created By",
                     footer.created_by.as_deref().unwrap_or("N/A"),
                 );
+                ui.separator();
+                Self::render_header_collapsible(ui, "Schema", |ui| {
+                    SchemaRenderer::render(ui, &footer.schema_root)
+                });
                 ui.separator();
                 Self::render_header_collapsible(ui, "Key Value Metadata", |ui| {
                     if let Some(kv_metadata) = &footer.key_value_metadata {
