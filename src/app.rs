@@ -1,5 +1,5 @@
 use eframe::{CreationContext, Frame};
-use egui::{Context, ViewportCommand};
+use egui::{Context, Theme, ViewportCommand};
 use log::info;
 
 use crate::{
@@ -29,6 +29,7 @@ impl ParkhayApp {
 
 impl eframe::App for ParkhayApp {
     fn update(&mut self, ctx: &Context, frame: &mut Frame) {
+        ctx.set_theme(Theme::Light); // Force light theme for now
         self.active_view.as_mut().update(ctx, frame);
     }
 }
