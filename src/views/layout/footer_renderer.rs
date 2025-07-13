@@ -1,9 +1,11 @@
 use egui::{Color32, Frame, Grid, Label, Margin, RichText, ScrollArea, Ui, Widget};
+use row_groups_renderer::RowGroupsRenderer;
 
 use crate::file::ParkhayFooter;
 
 use super::components::{CollapsibleSection, CollapsibleSectionIcon, LabeledValue};
 
+mod row_groups_renderer;
 mod ui_helpers;
 
 const CORNER_RADIUS: f32 = 2.5;
@@ -43,6 +45,12 @@ impl FooterRenderer {
                         Self::render_header_value(ui, "N/A");
                     }
                 });
+                ui.separator();
+                Self::render_header_collapsible(ui, "Row Group Metadata", |ui| {
+                    RowGroupsRenderer::render(ui, &footer.row_groups);
+                });
+
+                // TODO Column Orders
             });
     }
 
