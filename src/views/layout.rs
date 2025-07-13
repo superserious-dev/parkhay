@@ -1,3 +1,4 @@
+use data_renderer::DataRenderer;
 use egui::{CentralPanel, Frame, Label, RichText, Ui, Widget, epaint::MarginF32};
 use footer_renderer::FooterRenderer;
 
@@ -5,17 +6,19 @@ use super::View;
 use crate::ParkhayFile;
 
 mod components;
+mod data_renderer;
 mod footer_renderer;
+
+const CORNER_RADIUS: f32 = 2.5;
+const LAYOUT_LABEL_SIZE: f32 = 18.;
+const INNER_SECTION_MARGIN: f32 = 8.;
+const WINDOW_PADDING_HORIZONTAL: f32 = 20.;
+
 pub struct LayoutView {
     parkhay_file: ParkhayFile,
 }
 
 impl LayoutView {
-    const CORNER_RADIUS: f32 = 2.5;
-    const HEADER_TEXT_SIZE: f32 = 18.;
-    const INNER_SECTION_MARGIN: f32 = 8.;
-    const WINDOW_PADDING_HORIZONTAL: f32 = 20.;
-
     pub fn new(parkhay_file: ParkhayFile) -> Self {
         Self { parkhay_file }
     }
@@ -24,7 +27,7 @@ impl LayoutView {
         Label::new(
             RichText::new(text)
                 .monospace()
-                .size(Self::HEADER_TEXT_SIZE)
+                .size(LAYOUT_LABEL_SIZE)
                 .strong(),
         )
         .selectable(false)
@@ -39,60 +42,63 @@ impl View for LayoutView {
             let window_padding_vertical = 0.2 * ui.available_width() / 2.;
 
             Frame::default()
-                .corner_radius(Self::CORNER_RADIUS)
+                .corner_radius(CORNER_RADIUS)
                 .fill(ui.visuals().window_fill)
                 .stroke(ui.visuals().window_stroke)
                 .outer_margin(MarginF32::symmetric(
                     window_padding_vertical,
-                    Self::WINDOW_PADDING_HORIZONTAL,
+                    WINDOW_PADDING_HORIZONTAL,
                 ))
                 .show(ui, |ui| {
-                    Frame::default()
-                        .fill(ui.style().visuals.widgets.inactive.bg_fill)
-                        .stroke(ui.style().visuals.widgets.inactive.bg_stroke)
-                        .corner_radius(Self::CORNER_RADIUS)
-                        .inner_margin(Self::INNER_SECTION_MARGIN)
-                        .outer_margin(MarginF32::ZERO)
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            Self::render_layout_header(
-                                ui,
-                                &String::from_utf8_lossy(&self.parkhay_file.start_magic),
-                            );
-                        });
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        Frame::default()
+                            .fill(ui.style().visuals.widgets.inactive.bg_fill)
+                            .stroke(ui.style().visuals.widgets.inactive.bg_stroke)
+                            .corner_radius(CORNER_RADIUS)
+                            .inner_margin(INNER_SECTION_MARGIN)
+                            .outer_margin(MarginF32::ZERO)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                Self::render_layout_header(
+                                    ui,
+                                    &String::from_utf8_lossy(&self.parkhay_file.start_magic),
+                                );
+                            });
 
-                    // TODO add Data
+                        // Data
+                        DataRenderer::render(ui, &self.parkhay_file.data);
 
-                    // Footer
-                    FooterRenderer::render(ui, &self.parkhay_file.footer);
+                        // Footer
+                        FooterRenderer::render(ui, &self.parkhay_file.footer);
 
-                    Frame::default()
-                        .fill(ui.style().visuals.widgets.inactive.bg_fill)
-                        .stroke(ui.style().visuals.widgets.inactive.bg_stroke)
-                        .corner_radius(Self::CORNER_RADIUS)
-                        .inner_margin(Self::INNER_SECTION_MARGIN)
-                        .outer_margin(MarginF32::ZERO)
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            Self::render_layout_header(
-                                ui,
-                                &format!("Footer Length: {}", self.parkhay_file.footer_length),
-                            );
-                        });
+                        Frame::default()
+                            .fill(ui.style().visuals.widgets.inactive.bg_fill)
+                            .stroke(ui.style().visuals.widgets.inactive.bg_stroke)
+                            .corner_radius(CORNER_RADIUS)
+                            .inner_margin(INNER_SECTION_MARGIN)
+                            .outer_margin(MarginF32::ZERO)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                Self::render_layout_header(
+                                    ui,
+                                    &format!("Footer Length: {}", self.parkhay_file.footer_length),
+                                );
+                            });
 
-                    Frame::default()
-                        .fill(ui.style().visuals.widgets.inactive.bg_fill)
-                        .stroke(ui.style().visuals.widgets.inactive.bg_stroke)
-                        .corner_radius(Self::CORNER_RADIUS)
-                        .inner_margin(Self::INNER_SECTION_MARGIN)
-                        .outer_margin(MarginF32::ZERO)
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            Self::render_layout_header(
-                                ui,
-                                &String::from_utf8_lossy(&self.parkhay_file.end_magic),
-                            );
-                        });
+                        Frame::default()
+                            .fill(ui.style().visuals.widgets.inactive.bg_fill)
+                            .stroke(ui.style().visuals.widgets.inactive.bg_stroke)
+                            .corner_radius(CORNER_RADIUS)
+                            .inner_margin(INNER_SECTION_MARGIN)
+                            .outer_margin(MarginF32::ZERO)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                Self::render_layout_header(
+                                    ui,
+                                    &String::from_utf8_lossy(&self.parkhay_file.end_magic),
+                                );
+                            });
+                    });
                 });
         });
     }

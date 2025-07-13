@@ -4,13 +4,15 @@ use schema_renderer::SchemaRenderer;
 
 use crate::file::ParkhayFooter;
 
-use super::components::{CollapsibleSection, CollapsibleSectionIcon, LabeledValue};
+use super::{
+    CORNER_RADIUS,
+    components::{CollapsibleSection, CollapsibleSectionIcon, LabeledValue},
+};
 
 mod row_groups_renderer;
 mod schema_renderer;
 mod ui_helpers;
 
-const CORNER_RADIUS: f32 = 2.5;
 const LAYOUT_LABEL_SIZE: f32 = 19.;
 const HEADER_LABEL_SIZE: f32 = 15.;
 const HEADER_VALUE_SIZE: f32 = 14.;
