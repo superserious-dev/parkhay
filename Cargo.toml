@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.98"
 eframe = "0.32.0"
 egui = "0.32.0"
+egui_extras = "0.32.0"
 env_logger = { version = "0.11.8", features = ["humantime", "auto-color"] }
+log = "0.4.27"
+parquet = "55.2.0"
+thrift = { version = "0.17.0", default-features = false }
