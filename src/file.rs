@@ -119,7 +119,11 @@ impl ParkhayFile {
 #[derive(Debug)]
 pub enum ParkhayDataSection {
     ColumnChunk(SectionIndex, SectionMap, Field),
-    Page(SectionIndex, Box<parquet::format::PageHeader>),
+    Page(
+        SectionIndex,
+        Box<parquet::format::PageHeader>,
+        Arc<Mutex<Option<Vec<u8>>>>,
+    ),
     Root(SectionMap),
     RowGroup(SectionIndex, SectionMap),
 }
@@ -234,7 +238,8 @@ impl ParkhayDataSection {
                             page_start - 1
                         };
 
-                        let page = Self::Page(page_idx, Box::new(page_header));
+                        let page =
+                            Self::Page(page_idx, Box::new(page_header), Arc::new(Mutex::new(None)));
                         page_idx += 1;
 
                         cc_section.insert((page_start, page_end), page); // NOTE The byte range does not include the page header

@@ -1,6 +1,6 @@
 use eframe::{CreationContext, Frame};
 use egui::{Context, Theme, ViewportCommand};
-use log::info;
+use log::debug;
 
 use crate::{
     file::ParkhayFile,
@@ -15,9 +15,17 @@ pub struct ParkhayApp {
 impl ParkhayApp {
     pub fn new(cc: &CreationContext<'_>, parquet_path: String) -> Result<Self> {
         // Read parquet file metadata
-        info!("Reading metadata for file: {parquet_path}");
+        debug!("Reading metadata for file: {parquet_path}");
+
+        let cloned_ctx = cc.egui_ctx.clone();
         let parkhay_file = ParkhayFile::new(&parquet_path)?;
-        let active_view = Box::new(LayoutView::new(parkhay_file));
+
+        let page_reader_tx = parkhay_file.spawn_page_reader(move || {
+            debug!("Requesting repaint from page reader...");
+            cloned_ctx.request_repaint();
+        })?;
+
+        let active_view = Box::new(LayoutView::new(parkhay_file, page_reader_tx));
 
         // Update window title
         cc.egui_ctx

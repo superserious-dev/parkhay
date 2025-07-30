@@ -1,9 +1,11 @@
+use std::sync::mpsc::Sender;
+
 use data_renderer::DataRenderer;
 use egui::{CentralPanel, Frame, Label, RichText, Ui, Widget, epaint::MarginF32};
 use footer_renderer::FooterRenderer;
 
 use super::View;
-use crate::ParkhayFile;
+use crate::{ParkhayFile, file::PageReadRequest};
 
 mod components;
 mod data_renderer;
@@ -16,11 +18,15 @@ const WINDOW_PADDING_HORIZONTAL: f32 = 20.;
 
 pub struct LayoutView {
     parkhay_file: ParkhayFile,
+    page_reader_tx: Sender<PageReadRequest>,
 }
 
 impl LayoutView {
-    pub fn new(parkhay_file: ParkhayFile) -> Self {
-        Self { parkhay_file }
+    pub fn new(parkhay_file: ParkhayFile, page_reader_tx: Sender<PageReadRequest>) -> Self {
+        Self {
+            parkhay_file,
+            page_reader_tx,
+        }
     }
 
     fn render_layout_header(ui: &mut Ui, text: &str) {
@@ -66,7 +72,7 @@ impl View for LayoutView {
                             });
 
                         // Data
-                        DataRenderer::render(ui, &self.parkhay_file.data);
+                        DataRenderer::render(ui, &self.parkhay_file.data, &mut self.page_reader_tx);
 
                         // Footer
                         FooterRenderer::render(ui, &self.parkhay_file.footer);
