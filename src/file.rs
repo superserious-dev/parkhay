@@ -175,7 +175,6 @@ impl ParkhayDataSection {
                     while page_header_reader.stream_position().unwrap()
                         != cc_start + cc_metadata.total_compressed_size as u64
                     {
-                        let page_header_start = page_header_reader.stream_position().unwrap();
                         let mut blob = TCompactInputProtocol::new(&mut page_header_reader);
                         let page_header =
                             parquet::format::PageHeader::read_from_in_protocol(&mut blob)
@@ -198,7 +197,7 @@ impl ParkhayDataSection {
                         let page = Self::Page(page_idx, Box::new(page_header));
                         page_idx += 1;
 
-                        cc_section.insert((page_header_start, page_end), page); // NOTE The byte range includes the page header
+                        cc_section.insert((page_start, page_end), page); // NOTE The byte range does not include the page header
                     }
 
                     let cc_end = cc_start
