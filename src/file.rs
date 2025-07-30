@@ -3,6 +3,11 @@ use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
     panic,
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Sender},
+    },
+    thread,
 };
 
 use anyhow::{Context, Error, Result};
@@ -13,6 +18,9 @@ pub type ByteInterval = (u64, u64);
 pub type Field = parquet::schema::types::TypePtr;
 pub type SectionMap = BTreeMap<ByteInterval, ParkhayDataSection>;
 pub type SectionIndex = u64;
+
+#[derive(Debug)]
+pub struct PageReadRequest(pub ByteInterval, pub Arc<Mutex<Option<Vec<u8>>>>);
 
 #[derive(Debug)]
 pub struct ParkhayFile {
@@ -72,6 +80,38 @@ impl ParkhayFile {
             data: ParkhayDataSection::new(&footer.row_groups, footer.leaves(), file)?,
             footer,
         })
+    }
+
+    pub fn spawn_page_reader(
+        &self,
+        callback: impl Fn() + Send + 'static,
+    ) -> Result<Sender<PageReadRequest>> {
+        // Set up a communication channel with the page reader
+        let (page_reader_tx, page_reader_rx) = mpsc::channel::<PageReadRequest>();
+
+        // Spawn the page reader thread
+        let mut file = File::open(&self.path)?;
+        thread::spawn(move || {
+            // Wait for requests
+            while let Ok(message) = page_reader_rx.recv() {
+                let (byte_start, byte_end) = message.0;
+                let byte_length = byte_end - byte_start + 1;
+                let page_data = message.1;
+
+                file.seek(SeekFrom::Start(byte_start)).unwrap();
+                let mut bytes = vec![0u8; byte_length as usize];
+                file.read_exact(&mut bytes).unwrap();
+
+                if let Ok(mut page_data) = page_data.lock() {
+                    *page_data = Some(bytes);
+                };
+
+                // Execute the given callback after the page has been read
+                callback();
+            }
+        });
+
+        Ok(page_reader_tx)
     }
 }
 
