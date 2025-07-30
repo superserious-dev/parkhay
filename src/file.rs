@@ -69,7 +69,7 @@ impl ParkhayFile {
             start_magic,
             end_magic,
             footer_length,
-            data: ParkhayDataSection::new(&footer.row_groups, file)?,
+            data: ParkhayDataSection::new(&footer.row_groups, footer.leaves(), file)?,
             footer,
         })
     }
@@ -78,7 +78,7 @@ impl ParkhayFile {
 // TODO BloomFilter, ColumnIndex, OffsetIndex, CustomIndex
 #[derive(Debug)]
 pub enum ParkhayDataSection {
-    ColumnChunk(SectionIndex, SectionMap),
+    ColumnChunk(SectionIndex, SectionMap, Field),
     Page(SectionIndex, Box<parquet::format::PageHeader>),
     Root(SectionMap),
     RowGroup(SectionIndex, SectionMap),
@@ -92,7 +92,7 @@ impl ParkhayDataSection {
     fn insert(&mut self, byte_interval: ByteInterval, section: Self) {
         let sections = match self {
             ParkhayDataSection::Root(sections)
-            | ParkhayDataSection::ColumnChunk(_, sections)
+            | ParkhayDataSection::ColumnChunk(_, sections, _)
             | ParkhayDataSection::RowGroup(_, sections) => sections,
             _ => panic!("Cannot insert section into a non-container section"),
         };
@@ -110,7 +110,11 @@ impl ParkhayDataSection {
         sections.insert(byte_interval, section);
     }
 
-    fn new(rg_metadata: &[parquet::format::RowGroup], file: File) -> Result<Self> {
+    fn new(
+        rg_metadata: &[parquet::format::RowGroup],
+        leaves: Vec<Field>,
+        file: File,
+    ) -> Result<Self> {
         let mut root_section = Self::Root(SectionMap::new());
 
         for (rg_idx, rg) in rg_metadata.iter().enumerate() {
@@ -151,8 +155,11 @@ impl ParkhayDataSection {
                 }
 
                 if let Some(ref cc_metadata) = cc.meta_data {
-                    let mut cc_section =
-                        Self::ColumnChunk(cc_idx as SectionIndex, SectionMap::new());
+                    let mut cc_section = Self::ColumnChunk(
+                        cc_idx as SectionIndex,
+                        SectionMap::new(),
+                        leaves[cc_idx].clone(),
+                    );
 
                     // If the column chunk has a dictionary page, read it before the first data page
                     let cc_start = cc_metadata
@@ -222,6 +229,31 @@ pub struct ParkhayFooter {
     pub schema_root: Field,
     pub column_orders: Option<Vec<parquet::format::ColumnOrder>>,
     pub row_groups: Vec<parquet::format::RowGroup>,
+}
+
+impl ParkhayFooter {
+    fn leaves(&self) -> Vec<Field> {
+        let mut leaves = vec![];
+        if self.schema_root.is_group() {
+            for child_field in self.schema_root.get_fields() {
+                Self::leaves_helper(child_field, &mut leaves);
+            }
+        } else {
+            unreachable!()
+        }
+
+        leaves
+    }
+
+    fn leaves_helper(field: &Field, leaves: &mut Vec<Field>) {
+        if field.is_primitive() {
+            leaves.push(field.clone());
+        } else {
+            for child_field in field.get_fields() {
+                Self::leaves_helper(child_field, leaves);
+            }
+        }
+    }
 }
 
 impl TryFrom<parquet::format::FileMetaData> for ParkhayFooter {

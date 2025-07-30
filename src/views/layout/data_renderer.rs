@@ -72,7 +72,7 @@ impl DataRenderer {
                     }
                 });
             }
-            ParkhayDataSection::ColumnChunk(idx, sections) => {
+            ParkhayDataSection::ColumnChunk(idx, sections, _schema) => {
                 Self::render_collapsible_section(ui, &format!("Column Chunk: {idx}"), |ui| {
                     for subsection in sections.values() {
                         Self::render_section(ui, subsection);
