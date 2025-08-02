@@ -334,11 +334,14 @@ impl DataRenderer {
         let pd_bytes_len = pd_bytes.len();
         if bytes_to_take < pd_bytes_len {
             ui.add(egui::Label::new(
-                RichText::new(format!("Truncated {pd_bytes_len} bytes for preview."))
-                    .size(PAGE_DATA_BUTTON_SIZE)
-                    .background_color(Color32::from_rgb(250, 230, 170))
-                    .monospace()
-                    .strong(),
+                RichText::new(format!(
+                    "Truncated {} bytes for preview.",
+                    pd_bytes_len - bytes_to_take
+                ))
+                .size(PAGE_DATA_BUTTON_SIZE)
+                .background_color(Color32::from_rgb(250, 230, 170))
+                .monospace()
+                .strong(),
             ));
         }
     }
