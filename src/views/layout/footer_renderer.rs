@@ -2,7 +2,7 @@ use egui::{Color32, Frame, Grid, Label, Margin, RichText, ScrollArea, Ui, Widget
 use row_groups_renderer::RowGroupsRenderer;
 use schema_renderer::SchemaRenderer;
 
-use crate::file::ParkhayFooter;
+use crate::file::{Field, ParkhayFooter};
 
 use super::{
     CORNER_RADIUS,
@@ -46,6 +46,14 @@ impl FooterRenderer {
                     SchemaRenderer::render(ui, &footer.schema_root)
                 });
                 ui.separator();
+                Self::render_header_collapsible(ui, "Column Orders", |ui| {
+                    if let Some(column_orders) = &footer.column_orders {
+                        Self::render_column_orders(ui, column_orders, &footer.leaves());
+                    } else {
+                        Self::render_header_value(ui, "N/A");
+                    }
+                });
+                ui.separator();
                 Self::render_header_collapsible(ui, "Key Value Metadata", |ui| {
                     if let Some(kv_metadata) = &footer.key_value_metadata {
                         Self::render_key_value_metadata(ui, kv_metadata);
@@ -57,8 +65,6 @@ impl FooterRenderer {
                 Self::render_header_collapsible(ui, "Row Group Metadata", |ui| {
                     RowGroupsRenderer::render(ui, &footer.row_groups);
                 });
-
-                // TODO Column Orders
             });
     }
 
@@ -109,7 +115,7 @@ impl FooterRenderer {
         .show(ui, content);
     }
 
-    fn render_key_value_metadata(ui: &mut Ui, kv_metadata: &Vec<parquet::format::KeyValue>) {
+    fn render_key_value_metadata(ui: &mut Ui, kv_metadata: &[parquet::format::KeyValue]) {
         ScrollArea::horizontal().show(ui, |ui| {
             Grid::new("Key Value Metadata")
                 .num_columns(2)
@@ -145,6 +151,58 @@ impl FooterRenderer {
                             Label::new(RichText::new("N/A").monospace().size(SUBHEADER_VALUE_SIZE))
                                 .ui(ui);
                         }
+                        ui.end_row();
+                    }
+                });
+            ui.add_space(5.);
+        });
+    }
+
+    fn render_column_orders(
+        ui: &mut Ui,
+        column_orders: &[parquet::format::ColumnOrder],
+        leaves: &[Field],
+    ) {
+        ScrollArea::horizontal().show(ui, |ui| {
+            Grid::new("Column Orders")
+                .num_columns(2)
+                .spacing([10., 5.])
+                .striped(true)
+                .show(ui, |ui| {
+                    Label::new(
+                        RichText::new("Leaf")
+                            .monospace()
+                            .size(SUBHEADER_VALUE_SIZE)
+                            .strong(),
+                    )
+                    .ui(ui);
+                    Label::new(
+                        RichText::new("Sort Order")
+                            .monospace()
+                            .size(SUBHEADER_VALUE_SIZE)
+                            .strong(),
+                    )
+                    .ui(ui);
+                    ui.end_row();
+                    for (idx, _co) in column_orders.iter().enumerate() {
+                        let leaf = &leaves[idx];
+                        let so = parquet::basic::ColumnOrder::get_sort_order(
+                            leaf.get_basic_info().logical_type(),
+                            leaf.get_basic_info().converted_type(),
+                            leaf.get_physical_type(),
+                        );
+                        Label::new(
+                            RichText::new(format!("{idx}"))
+                                .monospace()
+                                .size(SUBHEADER_VALUE_SIZE),
+                        )
+                        .ui(ui);
+                        Label::new(
+                            RichText::new(format!("{so}"))
+                                .monospace()
+                                .size(SUBHEADER_VALUE_SIZE),
+                        )
+                        .ui(ui);
                         ui.end_row();
                     }
                 });

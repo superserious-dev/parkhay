@@ -276,7 +276,7 @@ pub struct ParkhayFooter {
 }
 
 impl ParkhayFooter {
-    fn leaves(&self) -> Vec<Field> {
+    pub fn leaves(&self) -> Vec<Field> {
         let mut leaves = vec![];
         if self.schema_root.is_group() {
             for child_field in self.schema_root.get_fields() {
