@@ -115,6 +115,16 @@ impl DataRenderer {
                     page_reader_tx,
                 );
             }
+            ParkhayDataSection::OffsetIndex(idx, offset_index) => {
+                Self::render_collapsible_section(ui, &format!("Offset Index: {idx}"), |ui| {
+                    Self::render_offset_index(ui, offset_index);
+                });
+            }
+            ParkhayDataSection::ColumnIndex(idx, column_index) => {
+                Self::render_collapsible_section(ui, &format!("Column Index: {idx}"), |ui| {
+                    Self::render_column_index(ui, column_index);
+                });
+            }
         }
     }
 
@@ -393,7 +403,6 @@ impl DataRenderer {
                     ui.label("N/A");
                 }
             });
-            // TODO index page header
             ui.separator();
             Self::render_header_collapsible(ui, "Data Page Header V2", |ui| {
                 if let Some(data_page_header_v2) = &page_header.data_page_header_v2 {
@@ -606,6 +615,96 @@ impl DataRenderer {
             "Is Min Value Exact",
             statistics
                 .is_min_value_exact
+                .map(|v| format!("{v:?}"))
+                .unwrap_or(String::from("N/A")),
+        );
+    }
+
+    fn render_column_index(ui: &mut Ui, column_index: &parquet::format::ColumnIndex) {
+        Self::render_header_labeled_value(
+            ui,
+            "Null Pages",
+            format!("{:?}", column_index.null_pages),
+        );
+        ui.separator();
+        Self::render_header_labeled_value(
+            ui,
+            "Min Values",
+            format!("{:?}", column_index.min_values),
+        );
+        ui.separator();
+        Self::render_header_labeled_value(
+            ui,
+            "Max Values",
+            format!("{:?}", column_index.max_values),
+        );
+        ui.separator();
+        // TODO find a better way to find human-readable boundary order
+        let boundary_order = match column_index.boundary_order.0 {
+            0 => "UNORDERED",
+            1 => "ASCENDING",
+            2 => "DESCENDING",
+            n => panic!("Unexpected boundary Order {n} found"),
+        };
+        Self::render_header_labeled_value(ui, "Boundary Order", boundary_order);
+        ui.separator();
+        Self::render_header_labeled_value(
+            ui,
+            "Null Counts",
+            column_index
+                .null_counts
+                .as_ref()
+                .map(|v| format!("{v:?}"))
+                .unwrap_or(String::from("N/A")),
+        );
+        ui.separator();
+        Self::render_header_labeled_value(
+            ui,
+            "Repetition Level Histograms",
+            column_index
+                .repetition_level_histograms
+                .as_ref()
+                .map(|v| format!("{v:?}"))
+                .unwrap_or(String::from("N/A")),
+        );
+        ui.separator();
+        Self::render_header_labeled_value(
+            ui,
+            "Definition Level Histograms",
+            column_index
+                .definition_level_histograms
+                .as_ref()
+                .map(|v| format!("{v:?}"))
+                .unwrap_or(String::from("N/A")),
+        );
+    }
+
+    fn render_offset_index(ui: &mut Ui, offset_index: &parquet::format::OffsetIndex) {
+        for page_location in &offset_index.page_locations {
+            Self::render_header_collapsible(ui, "Page Location", |ui| {
+                Self::render_header_labeled_value(ui, "Offset", page_location.offset.to_string());
+                ui.separator();
+                Self::render_header_labeled_value(
+                    ui,
+                    "Compressed Page Size",
+                    page_location.compressed_page_size.to_string(),
+                );
+                ui.separator();
+                Self::render_header_labeled_value(
+                    ui,
+                    "First Row Index",
+                    page_location.first_row_index.to_string(),
+                );
+            });
+            ui.separator();
+        }
+
+        Self::render_header_labeled_value(
+            ui,
+            "Offset",
+            offset_index
+                .unencoded_byte_array_data_bytes
+                .as_ref()
                 .map(|v| format!("{v:?}"))
                 .unwrap_or(String::from("N/A")),
         );

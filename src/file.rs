@@ -115,10 +115,11 @@ impl ParkhayFile {
     }
 }
 
-// TODO BloomFilter, ColumnIndex, OffsetIndex, CustomIndex
+// TODO BloomFilter, CustomIndex
 #[derive(Debug)]
 pub enum ParkhayDataSection {
     ColumnChunk(SectionIndex, SectionMap, Field),
+    ColumnIndex(SectionIndex, parquet::format::ColumnIndex),
     Page(
         SectionIndex,
         Box<parquet::format::PageHeader>,
@@ -126,6 +127,7 @@ pub enum ParkhayDataSection {
     ),
     Root(SectionMap),
     RowGroup(SectionIndex, SectionMap),
+    OffsetIndex(SectionIndex, parquet::format::OffsetIndex),
 }
 
 impl ParkhayDataSection {
@@ -173,7 +175,8 @@ impl ParkhayDataSection {
             // Since the indexes are generally written near the end of the file, reading them
             //  after reading all the column chunk pages should minimize the cost of seeking
             //  within the file.
-            let mut column_and_offset_index_ranges = BTreeSet::new();
+            let mut offset_index_ranges = BTreeSet::new();
+            let mut column_index_ranges = BTreeSet::new();
 
             for (cc_idx, cc) in rg.columns.iter().enumerate() {
                 // Store optional Column Index byte range
@@ -184,7 +187,7 @@ impl ParkhayDataSection {
                         .checked_add(length as i64 - 1)
                         .context("Column Index end exceeds bounds")?;
 
-                    column_and_offset_index_ranges.insert((start, end));
+                    column_index_ranges.insert((start, end));
                 }
 
                 // Store optional Offset Index byte range
@@ -195,7 +198,7 @@ impl ParkhayDataSection {
                         .checked_add(length as i64 - 1)
                         .context("Offset Index end exceeds bounds")?;
 
-                    column_and_offset_index_ranges.insert((start, end));
+                    offset_index_ranges.insert((start, end));
                 }
 
                 if let Some(ref cc_metadata) = cc.meta_data {
@@ -255,7 +258,31 @@ impl ParkhayDataSection {
                 }
             }
 
-            // TODO read offset index and column index sections from file
+            for (column_index_idx, (start, end)) in column_index_ranges.into_iter().enumerate() {
+                let mut index_reader = file
+                    .get_read(start.try_into()?)
+                    .context("Could not create column index reader")?;
+                let mut blob = TCompactInputProtocol::new(&mut index_reader);
+                let column_index = parquet::format::ColumnIndex::read_from_in_protocol(&mut blob)
+                    .context("Could not decode column index")?;
+
+                let column_index_section =
+                    Self::ColumnIndex(column_index_idx.try_into()?, column_index);
+                root_section.insert((start.try_into()?, end.try_into()?), column_index_section);
+            }
+
+            for (offset_index_idx, (start, end)) in offset_index_ranges.into_iter().enumerate() {
+                let mut index_reader = file
+                    .get_read(start.try_into()?)
+                    .context("Could not create offset index reader")?;
+                let mut blob = TCompactInputProtocol::new(&mut index_reader);
+                let offset_index = parquet::format::OffsetIndex::read_from_in_protocol(&mut blob)
+                    .context("Could not decode offset index")?;
+
+                let offset_index_section =
+                    Self::OffsetIndex(offset_index_idx.try_into()?, offset_index);
+                root_section.insert((start.try_into()?, end.try_into()?), offset_index_section);
+            }
 
             root_section.insert((rg_start, rg_end), rg_section);
         }
