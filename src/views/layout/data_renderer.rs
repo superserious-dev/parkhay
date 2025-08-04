@@ -64,6 +64,14 @@ impl DataRenderer {
         );
     }
 
+    fn render_header_value(ui: &mut Ui, value: impl AsRef<str>) {
+        ui.label(
+            RichText::new(value.as_ref())
+                .monospace()
+                .size(HEADER_VALUE_SIZE),
+        );
+    }
+
     fn render_header_collapsible(
         ui: &mut Ui,
         header: impl AsRef<str>,
@@ -396,7 +404,7 @@ impl DataRenderer {
                 if let Some(data_page_header) = &page_header.data_page_header {
                     Self::render_data_page_header(ui, data_page_header);
                 } else {
-                    ui.label("N/A");
+                    Self::render_header_value(ui, "N/A");
                 }
             });
             ui.separator();
@@ -404,7 +412,7 @@ impl DataRenderer {
                 if let Some(dictionary_page_header) = &page_header.dictionary_page_header {
                     Self::render_dictionary_page_header(ui, dictionary_page_header);
                 } else {
-                    ui.label("N/A");
+                    Self::render_header_value(ui, "N/A");
                 }
             });
             ui.separator();
@@ -412,7 +420,7 @@ impl DataRenderer {
                 if let Some(data_page_header_v2) = &page_header.data_page_header_v2 {
                     Self::render_data_page_header_v2(ui, data_page_header_v2);
                 } else {
-                    ui.label("N/A");
+                    Self::render_header_value(ui, "N/A");
                 }
             });
         });
@@ -453,7 +461,7 @@ impl DataRenderer {
             if let Some(statistics) = &data_page_header.statistics {
                 Self::render_statistics(ui, statistics);
             } else {
-                ui.label("N/A");
+                Self::render_header_value(ui, "N/A");
             }
         });
     }
@@ -513,7 +521,7 @@ impl DataRenderer {
             if let Some(statistics) = &data_page_header_v2.statistics {
                 Self::render_statistics(ui, statistics);
             } else {
-                ui.label("N/A");
+                Self::render_header_value(ui, "N/A");
             }
         });
     }
