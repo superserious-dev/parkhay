@@ -20,7 +20,7 @@ pub type SectionMap = BTreeMap<ByteInterval, ParkhayDataSection>;
 pub type SectionIndex = u64;
 
 #[derive(Debug)]
-pub struct PageReadRequest(pub ByteInterval, pub Arc<Mutex<Option<Vec<u8>>>>);
+pub struct ReadRequest(pub ByteInterval, pub Arc<Mutex<Option<Vec<u8>>>>);
 
 #[derive(Debug)]
 pub struct ParkhayFile {
@@ -82,18 +82,18 @@ impl ParkhayFile {
         })
     }
 
-    pub fn spawn_page_reader(
+    pub fn spawn_data_reader(
         &self,
         callback: impl Fn() + Send + 'static,
-    ) -> Result<Sender<PageReadRequest>> {
-        // Set up a communication channel with the page reader
-        let (page_reader_tx, page_reader_rx) = mpsc::channel::<PageReadRequest>();
+    ) -> Result<Sender<ReadRequest>> {
+        // Set up a communication channel with the data reader
+        let (data_reader_tx, data_reader_rx) = mpsc::channel::<ReadRequest>();
 
-        // Spawn the page reader thread
+        // Spawn the data reader thread
         let mut file = File::open(&self.path)?;
         thread::spawn(move || {
             // Wait for requests
-            while let Ok(message) = page_reader_rx.recv() {
+            while let Ok(message) = data_reader_rx.recv() {
                 let (byte_start, byte_end) = message.0;
                 let byte_length = byte_end - byte_start + 1;
                 let page_data = message.1;
@@ -106,18 +106,23 @@ impl ParkhayFile {
                     *page_data = Some(bytes);
                 };
 
-                // Execute the given callback after the page has been read
+                // Execute the given callback after the data has been read
                 callback();
             }
         });
 
-        Ok(page_reader_tx)
+        Ok(data_reader_tx)
     }
 }
 
 // TODO BloomFilter, CustomIndex
 #[derive(Debug)]
 pub enum ParkhayDataSection {
+    BloomFilter(
+        SectionIndex,
+        parquet::format::BloomFilterHeader,
+        Arc<Mutex<Option<Vec<u8>>>>,
+    ),
     ColumnChunk(SectionIndex, SectionMap, Field),
     ColumnIndex(SectionIndex, parquet::format::ColumnIndex),
     Page(
@@ -177,6 +182,9 @@ impl ParkhayDataSection {
             //  within the file.
             let mut offset_index_ranges = BTreeSet::new();
             let mut column_index_ranges = BTreeSet::new();
+            // Bloom Filters can be either be at the end of the file or interspersed within the file
+            // For now, treat them the same as column and offset indexes
+            let mut bloom_filter_header_ranges = BTreeSet::new();
 
             for (cc_idx, cc) in rg.columns.iter().enumerate() {
                 // Store optional Column Index byte range
@@ -207,6 +215,11 @@ impl ParkhayDataSection {
                         SectionMap::new(),
                         leaves[cc_idx].clone(),
                     );
+
+                    // Store optional Bloom Filter byte offset
+                    if let Some(start) = cc_metadata.bloom_filter_offset {
+                        bloom_filter_header_ranges.insert(start);
+                    }
 
                     // If the column chunk has a dictionary page, read it before the first data page
                     let cc_start = cc_metadata
@@ -282,6 +295,29 @@ impl ParkhayDataSection {
                 let offset_index_section =
                     Self::OffsetIndex(offset_index_idx.try_into()?, offset_index);
                 root_section.insert((start.try_into()?, end.try_into()?), offset_index_section);
+            }
+
+            for (bloom_filter_idx, header_start) in
+                bloom_filter_header_ranges.into_iter().enumerate()
+            {
+                let mut bloom_filter_reader = file
+                    .get_read(header_start.try_into()?)
+                    .context("Could not create bloom filter reader")?;
+                let mut blob = TCompactInputProtocol::new(&mut bloom_filter_reader);
+                let bloom_filter =
+                    parquet::format::BloomFilterHeader::read_from_in_protocol(&mut blob)
+                        .context("Could not decode bloom filter header")?;
+
+                let filter_num_bytes = bloom_filter.num_bytes;
+                let bloom_filter_section = Self::BloomFilter(
+                    bloom_filter_idx.try_into()?,
+                    bloom_filter,
+                    Arc::new(Mutex::new(None)),
+                );
+
+                let data_start = bloom_filter_reader.stream_position().unwrap();
+                let data_end = data_start.checked_add(filter_num_bytes as u64 - 1).unwrap();
+                root_section.insert((data_start, data_end), bloom_filter_section);
             }
 
             root_section.insert((rg_start, rg_end), rg_section);

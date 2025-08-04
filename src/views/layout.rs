@@ -5,7 +5,7 @@ use egui::{CentralPanel, Frame, Label, RichText, Ui, Widget, epaint::MarginF32};
 use footer_renderer::FooterRenderer;
 
 use super::View;
-use crate::{ParkhayFile, file::PageReadRequest};
+use crate::{ParkhayFile, file::ReadRequest};
 
 mod components;
 mod data_renderer;
@@ -18,14 +18,14 @@ const WINDOW_PADDING_HORIZONTAL: f32 = 20.;
 
 pub struct LayoutView {
     parkhay_file: ParkhayFile,
-    page_reader_tx: Sender<PageReadRequest>,
+    data_reader_tx: Sender<ReadRequest>,
 }
 
 impl LayoutView {
-    pub fn new(parkhay_file: ParkhayFile, page_reader_tx: Sender<PageReadRequest>) -> Self {
+    pub fn new(parkhay_file: ParkhayFile, data_reader_tx: Sender<ReadRequest>) -> Self {
         Self {
             parkhay_file,
-            page_reader_tx,
+            data_reader_tx,
         }
     }
 
@@ -72,7 +72,7 @@ impl View for LayoutView {
                             });
 
                         // Data
-                        DataRenderer::render(ui, &self.parkhay_file.data, &mut self.page_reader_tx);
+                        DataRenderer::render(ui, &self.parkhay_file.data, &mut self.data_reader_tx);
 
                         // Footer
                         FooterRenderer::render(ui, &self.parkhay_file.footer);

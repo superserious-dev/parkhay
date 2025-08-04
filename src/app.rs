@@ -20,12 +20,12 @@ impl ParkhayApp {
         let cloned_ctx = cc.egui_ctx.clone();
         let parkhay_file = ParkhayFile::new(&parquet_path)?;
 
-        let page_reader_tx = parkhay_file.spawn_page_reader(move || {
+        let data_reader_tx = parkhay_file.spawn_data_reader(move || {
             debug!("Requesting repaint from page reader...");
             cloned_ctx.request_repaint();
         })?;
 
-        let active_view = Box::new(LayoutView::new(parkhay_file, page_reader_tx));
+        let active_view = Box::new(LayoutView::new(parkhay_file, data_reader_tx));
 
         // Update window title
         cc.egui_ctx

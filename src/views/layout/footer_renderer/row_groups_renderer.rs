@@ -248,6 +248,34 @@ impl RowGroupsRenderer {
                                         .map(|v| v.to_string())
                                         .unwrap_or(String::from("N/A")),
                                 );
+
+                                ui.separator();
+
+                                // TODO statistics
+                                // TODO encoding stats
+
+                                UiHelpers::render_subheader_labeled_value(
+                                    ui,
+                                    "Bloom Filter Offset",
+                                    metadata
+                                        .bloom_filter_offset
+                                        .map(|v| v.to_string())
+                                        .unwrap_or(String::from("N/A")),
+                                );
+
+                                ui.separator();
+
+                                UiHelpers::render_subheader_labeled_value(
+                                    ui,
+                                    "Bloom Filter Length",
+                                    metadata
+                                        .bloom_filter_length
+                                        .map(|v| v.to_string())
+                                        .unwrap_or(String::from("N/A")),
+                                );
+
+                                // TODO size statistics
+                                // TODO geospatial statistics
                             } else {
                                 UiHelpers::render_subheader_value(ui, "N/A");
                             }

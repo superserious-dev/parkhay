@@ -6,7 +6,7 @@ use std::{
 use anyhow::Context;
 use egui::{Color32, Frame, Label, Margin, RichText, Sense, Stroke, Ui, UiBuilder, Widget};
 
-use crate::file::{ByteInterval, PageReadRequest, ParkhayDataSection};
+use crate::file::{ByteInterval, ParkhayDataSection, ReadRequest};
 
 use super::{
     CORNER_RADIUS,
@@ -16,12 +16,12 @@ use super::{
 const LAYOUT_LABEL_SIZE: f32 = 16.;
 const HEADER_LABEL_SIZE: f32 = 15.;
 const HEADER_VALUE_SIZE: f32 = 14.;
-const PAGE_DATA_BUTTON_SIZE: f32 = 11.;
-const PAGE_DATA_PREVIEW_SIZE: f32 = 13.;
-const PAGE_DATA_PREVIEW_APPROX_ROW_COUNT: usize = 15;
+const DATA_BUTTON_SIZE: f32 = 11.;
+const DATA_PREVIEW_SIZE: f32 = 13.;
+const DATA_PREVIEW_APPROX_ROW_COUNT: usize = 15;
 
 #[derive(Clone, Default, PartialEq)]
-enum PageDataPreviewState {
+enum PreviewState {
     #[default]
     Hidden,
     Visible,
@@ -30,15 +30,11 @@ enum PageDataPreviewState {
 
 pub struct DataRenderer;
 impl DataRenderer {
-    pub fn render(
-        ui: &mut Ui,
-        data: &ParkhayDataSection,
-        page_reader_tx: &mut Sender<PageReadRequest>,
-    ) {
+    pub fn render(ui: &mut Ui, data: &ParkhayDataSection, reader_tx: &mut Sender<ReadRequest>) {
         match data {
             ParkhayDataSection::Root(sections) => {
                 for (byte_interval, section) in sections {
-                    Self::render_section(ui, byte_interval, section, page_reader_tx.clone());
+                    Self::render_section(ui, byte_interval, section, reader_tx.clone());
                 }
             }
             _ => unreachable!(),
@@ -87,32 +83,33 @@ impl DataRenderer {
         ui: &mut Ui,
         byte_interval: &ByteInterval,
         section: &ParkhayDataSection,
-        page_reader_tx: Sender<PageReadRequest>,
+        data_reader_tx: Sender<ReadRequest>,
     ) {
+        ui.style_mut().visuals.collapsing_header_frame = true;
         match section {
             ParkhayDataSection::Root(_) => unreachable!(),
             ParkhayDataSection::RowGroup(idx, sections) => {
                 Self::render_collapsible_section(ui, &format!("Row Group: {idx}"), |ui| {
                     for (byte_interval, subsection) in sections {
-                        Self::render_section(ui, byte_interval, subsection, page_reader_tx.clone());
+                        Self::render_section(ui, byte_interval, subsection, data_reader_tx.clone());
                     }
                 });
             }
             ParkhayDataSection::ColumnChunk(idx, sections, _schema) => {
                 Self::render_collapsible_section(ui, &format!("Column Chunk: {idx}"), |ui| {
                     for (byte_interval, subsection) in sections {
-                        Self::render_section(ui, byte_interval, subsection, page_reader_tx.clone());
+                        Self::render_section(ui, byte_interval, subsection, data_reader_tx.clone());
                     }
                 });
             }
-            ParkhayDataSection::Page(idx, page_header, data) => {
+            ParkhayDataSection::Page(idx, header, data) => {
                 Self::render_page(
                     ui,
                     byte_interval,
                     *idx as usize,
-                    page_header,
+                    header,
                     data.clone(),
-                    page_reader_tx,
+                    data_reader_tx,
                 );
             }
             ParkhayDataSection::OffsetIndex(idx, offset_index) => {
@@ -125,7 +122,18 @@ impl DataRenderer {
                     Self::render_column_index(ui, column_index);
                 });
             }
+            ParkhayDataSection::BloomFilter(idx, header, bitset) => {
+                Self::render_bloom_filter(
+                    ui,
+                    byte_interval,
+                    *idx as usize,
+                    header,
+                    bitset.clone(),
+                    data_reader_tx,
+                );
+            }
         }
+        ui.style_mut().visuals.collapsing_header_frame = false;
     }
 
     fn render_collapsible_section(
@@ -133,7 +141,6 @@ impl DataRenderer {
         identifier: &str,
         section_content: impl FnOnce(&mut Ui),
     ) {
-        ui.style_mut().visuals.collapsing_header_frame = true;
         let id = ui.make_persistent_id(identifier);
         ui.scope_builder(UiBuilder::new().id_salt(id).sense(Sense::click()), |ui| {
             let response = ui.response();
@@ -166,7 +173,6 @@ impl DataRenderer {
                     }
                 });
         });
-        ui.style_mut().visuals.collapsing_header_frame = false;
     }
 
     fn render_page(
@@ -175,7 +181,7 @@ impl DataRenderer {
         page_idx: usize,
         page_header: &parquet::format::PageHeader,
         page_data: Arc<Mutex<Option<Vec<u8>>>>,
-        page_reader_tx: Sender<PageReadRequest>,
+        data_reader_tx: Sender<ReadRequest>,
     ) {
         let identifier = format!("Page: {page_idx}");
 
@@ -202,20 +208,18 @@ impl DataRenderer {
                     ui.separator();
 
                     // Get current preview state, setting it to default if it's not set
-                    let current_state = ui.data_mut(|d| {
-                        d.get_temp_mut_or_default::<PageDataPreviewState>(id)
-                            .clone()
-                    });
+                    let current_state =
+                        ui.data_mut(|d| d.get_temp_mut_or_default::<PreviewState>(id).clone());
 
                     // Compute next state based on current state and UI interactions
                     let next_state = match current_state {
-                        PageDataPreviewState::Hidden => {
+                        PreviewState::Hidden => {
                             let button_clicked = ui
                                 .vertical_centered_justified(|ui| {
                                     ui.button(
                                         RichText::new("Show Preview")
                                             .monospace()
-                                            .size(PAGE_DATA_BUTTON_SIZE)
+                                            .size(DATA_BUTTON_SIZE)
                                             .strong(),
                                     )
                                     .clicked()
@@ -225,24 +229,24 @@ impl DataRenderer {
                             if button_clicked {
                                 if let Ok(pd) = page_data.lock() {
                                     if pd.is_some() {
-                                        PageDataPreviewState::Visible
+                                        PreviewState::Visible
                                     } else {
-                                        PageDataPreviewState::Pending
+                                        PreviewState::Pending
                                     }
                                 } else {
-                                    panic!("Can't get lock on page_data");
+                                    panic!("Can't get lock on page data");
                                 }
                             } else {
                                 current_state.clone()
                             }
                         }
-                        PageDataPreviewState::Visible => {
+                        PreviewState::Visible => {
                             let button_clicked = ui
                                 .vertical_centered_justified(|ui| {
                                     ui.button(
                                         RichText::new("Hide Preview")
                                             .monospace()
-                                            .size(PAGE_DATA_BUTTON_SIZE)
+                                            .size(DATA_BUTTON_SIZE)
                                             .strong(),
                                     )
                                     .clicked()
@@ -250,15 +254,15 @@ impl DataRenderer {
                                 .inner;
 
                             if button_clicked {
-                                PageDataPreviewState::Hidden
+                                PreviewState::Hidden
                             } else {
                                 current_state.clone()
                             }
                         }
-                        PageDataPreviewState::Pending => {
+                        PreviewState::Pending => {
                             if let Ok(pd) = page_data.lock() {
                                 if pd.is_some() {
-                                    PageDataPreviewState::Visible
+                                    PreviewState::Visible
                                 } else {
                                     ui.vertical_centered_justified(|ui| {
                                         ui.add_enabled(
@@ -266,7 +270,7 @@ impl DataRenderer {
                                             egui::Button::new(
                                                 RichText::new("Show Preview")
                                                     .monospace()
-                                                    .size(PAGE_DATA_BUTTON_SIZE)
+                                                    .size(DATA_BUTTON_SIZE)
                                                     .strong(),
                                             ),
                                         );
@@ -274,7 +278,7 @@ impl DataRenderer {
                                     current_state.clone()
                                 }
                             } else {
-                                panic!("Can't get lock on page_data");
+                                panic!("Can't get lock on page data");
                             }
                         }
                     };
@@ -288,46 +292,46 @@ impl DataRenderer {
                         // Show cached data
                         // Show newly fetched data
                         // Keep showing cached data
-                        (PageDataPreviewState::Hidden, PageDataPreviewState::Visible)
-                        | (PageDataPreviewState::Pending, PageDataPreviewState::Visible)
-                        | (PageDataPreviewState::Visible, PageDataPreviewState::Visible) => {
+                        (PreviewState::Hidden, PreviewState::Visible)
+                        | (PreviewState::Pending, PreviewState::Visible)
+                        | (PreviewState::Visible, PreviewState::Visible) => {
                             if let Ok(pd) = page_data.lock() {
                                 if let Some(ref pd_bytes) = *pd {
-                                    Self::render_page_data_preview(ui, pd_bytes);
+                                    Self::render_data_preview(ui, pd_bytes);
                                 }
                             } else {
-                                panic!("Can't get lock on page_data");
+                                panic!("Can't get lock on page data");
                             }
                         }
                         // Fetch data
-                        (PageDataPreviewState::Hidden, PageDataPreviewState::Pending) => {
-                            page_reader_tx
-                                .send(PageReadRequest(*byte_interval, page_data.clone()))
-                                .context("Couldn't send message to page reader thread")
+                        (PreviewState::Hidden, PreviewState::Pending) => {
+                            data_reader_tx
+                                .send(ReadRequest(*byte_interval, page_data.clone()))
+                                .context("Couldn't send message to reader thread")
                                 .unwrap();
                         }
                         // Invalid states
-                        (PageDataPreviewState::Visible, PageDataPreviewState::Pending)
-                        | (PageDataPreviewState::Pending, PageDataPreviewState::Hidden) => {
+                        (PreviewState::Visible, PreviewState::Pending)
+                        | (PreviewState::Pending, PreviewState::Hidden) => {
                             unreachable!()
                         }
                         // Don't show any data
-                        (PageDataPreviewState::Visible, PageDataPreviewState::Hidden)
-                        | (PageDataPreviewState::Pending, PageDataPreviewState::Pending)
-                        | (PageDataPreviewState::Hidden, PageDataPreviewState::Hidden) => {}
+                        (PreviewState::Visible, PreviewState::Hidden)
+                        | (PreviewState::Pending, PreviewState::Pending)
+                        | (PreviewState::Hidden, PreviewState::Hidden) => {}
                     }
                 });
         });
     }
 
-    fn render_page_data_preview(ui: &mut Ui, pd_bytes: &[u8]) {
-        let font_id = egui::FontId::monospace(PAGE_DATA_PREVIEW_SIZE);
+    fn render_data_preview(ui: &mut Ui, pd_bytes: &[u8]) {
+        let font_id = egui::FontId::monospace(DATA_PREVIEW_SIZE);
         let char_width = ui.fonts(|fonts| {
             fonts.glyph_width(&font_id, 'a') // Pick an arbitrary char since the font is monospace
         });
 
         let byte_count_per_row = (ui.available_width() / (2. * char_width)).floor() as usize; // 2 hex chars for each byte
-        let bytes_to_take = byte_count_per_row * PAGE_DATA_PREVIEW_APPROX_ROW_COUNT;
+        let bytes_to_take = byte_count_per_row * DATA_PREVIEW_APPROX_ROW_COUNT;
 
         let hex_string = pd_bytes
             .iter()
@@ -338,7 +342,7 @@ impl DataRenderer {
         ui.label(
             RichText::new(hex_string)
                 .monospace()
-                .size(PAGE_DATA_PREVIEW_SIZE),
+                .size(DATA_PREVIEW_SIZE),
         );
 
         let pd_bytes_len = pd_bytes.len();
@@ -348,7 +352,7 @@ impl DataRenderer {
                     "Truncated {} bytes for preview.",
                     pd_bytes_len - bytes_to_take
                 ))
-                .size(PAGE_DATA_BUTTON_SIZE)
+                .size(DATA_BUTTON_SIZE)
                 .background_color(Color32::from_rgb(250, 230, 170))
                 .monospace()
                 .strong(),
@@ -708,5 +712,163 @@ impl DataRenderer {
                 .map(|v| format!("{v:?}"))
                 .unwrap_or(String::from("N/A")),
         );
+    }
+
+    fn render_bloom_filter(
+        ui: &mut Ui,
+        byte_interval: &ByteInterval,
+        bf_idx: usize,
+        header: &parquet::format::BloomFilterHeader,
+        bitset: Arc<Mutex<Option<Vec<u8>>>>,
+        reader_tx: Sender<ReadRequest>,
+    ) {
+        let identifier = format!("Bloom Filter: {bf_idx}");
+
+        let id = ui.make_persistent_id(&identifier);
+        Self::render_collapsible_section(ui, &identifier, |ui| {
+            ui.set_width(ui.available_width());
+
+            Self::render_bloom_filter_header(ui, header);
+
+            ui.separator();
+
+            // Get current preview state, setting it to default if it's not set
+            let current_state =
+                ui.data_mut(|d| d.get_temp_mut_or_default::<PreviewState>(id).clone());
+
+            // Compute next state based on current state and UI interactions
+            let next_state = match current_state {
+                PreviewState::Hidden => {
+                    let button_clicked = ui
+                        .vertical_centered_justified(|ui| {
+                            ui.button(
+                                RichText::new("Show Preview")
+                                    .monospace()
+                                    .size(DATA_BUTTON_SIZE)
+                                    .strong(),
+                            )
+                            .clicked()
+                        })
+                        .inner;
+
+                    if button_clicked {
+                        if let Ok(pd) = bitset.lock() {
+                            if pd.is_some() {
+                                PreviewState::Visible
+                            } else {
+                                PreviewState::Pending
+                            }
+                        } else {
+                            panic!("Can't get lock on bitset data");
+                        }
+                    } else {
+                        current_state.clone()
+                    }
+                }
+                PreviewState::Visible => {
+                    let button_clicked = ui
+                        .vertical_centered_justified(|ui| {
+                            ui.button(
+                                RichText::new("Hide Preview")
+                                    .monospace()
+                                    .size(DATA_BUTTON_SIZE)
+                                    .strong(),
+                            )
+                            .clicked()
+                        })
+                        .inner;
+
+                    if button_clicked {
+                        PreviewState::Hidden
+                    } else {
+                        current_state.clone()
+                    }
+                }
+                PreviewState::Pending => {
+                    if let Ok(pd) = bitset.lock() {
+                        if pd.is_some() {
+                            PreviewState::Visible
+                        } else {
+                            ui.vertical_centered_justified(|ui| {
+                                ui.add_enabled(
+                                    false,
+                                    egui::Button::new(
+                                        RichText::new("Show Preview")
+                                            .monospace()
+                                            .size(DATA_BUTTON_SIZE)
+                                            .strong(),
+                                    ),
+                                );
+                            });
+                            current_state.clone()
+                        }
+                    } else {
+                        panic!("Can't get lock on bitset data");
+                    }
+                }
+            };
+
+            // Store next state
+            ui.data_mut(|d| {
+                d.insert_temp(id, next_state.clone());
+            });
+
+            match (current_state, next_state) {
+                // Show cached data
+                // Show newly fetched data
+                // Keep showing cached data
+                (PreviewState::Hidden, PreviewState::Visible)
+                | (PreviewState::Pending, PreviewState::Visible)
+                | (PreviewState::Visible, PreviewState::Visible) => {
+                    if let Ok(pd) = bitset.lock() {
+                        if let Some(ref pd_bytes) = *pd {
+                            Self::render_data_preview(ui, pd_bytes);
+                        }
+                    } else {
+                        panic!("Can't get lock on bitset data");
+                    }
+                }
+                // Fetch data
+                (PreviewState::Hidden, PreviewState::Pending) => {
+                    reader_tx
+                        .send(ReadRequest(*byte_interval, bitset.clone()))
+                        .context("Couldn't send message to reader thread")
+                        .unwrap();
+                }
+                // Invalid states
+                (PreviewState::Visible, PreviewState::Pending)
+                | (PreviewState::Pending, PreviewState::Hidden) => {
+                    unreachable!()
+                }
+                // Don't show any data
+                (PreviewState::Visible, PreviewState::Hidden)
+                | (PreviewState::Pending, PreviewState::Pending)
+                | (PreviewState::Hidden, PreviewState::Hidden) => {}
+            }
+        });
+    }
+
+    fn render_bloom_filter_header(ui: &mut Ui, header: &parquet::format::BloomFilterHeader) {
+        Self::render_header_collapsible(ui, "Header", |ui| {
+            Self::render_header_labeled_value(ui, "Num Bytes", header.num_bytes.to_string());
+            ui.separator();
+            Self::render_header_labeled_value(
+                ui,
+                "Bloom Filter Algorithm",
+                format!("{:?}", header.algorithm),
+            );
+            ui.separator();
+            Self::render_header_labeled_value(
+                ui,
+                "Bloom Filter Hash",
+                format!("{:?}", header.hash),
+            );
+            ui.separator();
+            Self::render_header_labeled_value(
+                ui,
+                "Bloom Filter Compression",
+                format!("{:?}", header.compression),
+            );
+        });
     }
 }
