@@ -692,23 +692,31 @@ impl DataRenderer {
     }
 
     fn render_offset_index(ui: &mut Ui, offset_index: &parquet::format::OffsetIndex) {
-        for page_location in &offset_index.page_locations {
-            Self::render_header_collapsible(ui, "Page Location", |ui| {
-                Self::render_header_labeled_value(ui, "Offset", page_location.offset.to_string());
+        for (page_offset_idx, page_location) in offset_index.page_locations.iter().enumerate() {
+            let identifier = format!("Page Location: {page_offset_idx}");
+            let id = ui.make_persistent_id(&identifier);
+            ui.push_id(id, |ui| {
+                Self::render_header_collapsible(ui, identifier, |ui| {
+                    Self::render_header_labeled_value(
+                        ui,
+                        "Offset",
+                        page_location.offset.to_string(),
+                    );
+                    ui.separator();
+                    Self::render_header_labeled_value(
+                        ui,
+                        "Compressed Page Size",
+                        page_location.compressed_page_size.to_string(),
+                    );
+                    ui.separator();
+                    Self::render_header_labeled_value(
+                        ui,
+                        "First Row Index",
+                        page_location.first_row_index.to_string(),
+                    );
+                });
                 ui.separator();
-                Self::render_header_labeled_value(
-                    ui,
-                    "Compressed Page Size",
-                    page_location.compressed_page_size.to_string(),
-                );
-                ui.separator();
-                Self::render_header_labeled_value(
-                    ui,
-                    "First Row Index",
-                    page_location.first_row_index.to_string(),
-                );
             });
-            ui.separator();
         }
 
         Self::render_header_labeled_value(
